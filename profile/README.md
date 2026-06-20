@@ -1,284 +1,351 @@
+# XLMPay 💫
 
+### Non-Custodial Recurring & Pull Payments on Stellar
 
-# 🌞 SolarFi — Pay-As-You-Go Solar Powered by Stellar
+Soroban Smart Contracts • Recurring Payments • Subscriptions • Payroll Streaming • Non-Custodial Infrastructure
 
-**SolarFi** is a blockchain-powered Pay-As-You-Go (PAYG) solar system that directly connects **micropayments to physical electricity access**.
+XLMPay is an open-source protocol for **recurring and pull-based payments** on the **Stellar** network, built on **Soroban** smart contracts.
 
-Unlike traditional fintech apps that only move money, SolarFi controls **real-world hardware**. When a user’s credit runs out, the system automatically cuts power via a relay. When they pay, electricity is restored — instantly.
-
----
-
-## 🚀 What Makes SolarFi Different
-
-* ⚡ **Money → Electricity Bridge**
-  Payments on the blockchain directly control power supply.
-
-* 🔗 **Blockchain + IoT Integration**
-  Combines **ESP32 hardware**, **MQTT messaging**, and **Soroban smart contracts**.
-
-* 💸 **Ultra-Low Cost Micropayments**
-  Powered by Stellar with near-zero fees.
-
-* 🌍 **Real-World Impact**
-  Inspired by PAYG leaders like M-KOPA, but removes reliance on costly SMS infrastructure.
+It lets a payer authorize a recipient to pull funds on a schedule — a subscription, a salary, rent, an installment plan — **without** giving up custody of their funds and **without** having to manually sign a transaction every single payment cycle.
 
 ---
 
-## 🏗️ System Architecture
+# 🚀 The Problem
 
-SolarFi consists of **four tightly integrated layers**:
+Sending a one-time crypto payment is easy: you sign a transaction, it settles, done.
 
-### 1. 🔌 IoT Hardware Layer
+**Recurring** payments are not. On most blockchains, including Stellar today, there is no native way for a merchant or employer to "charge" a wallet the way a credit card network can auto-charge a card. This leaves people with two bad options:
 
-* **ESP32** microcontroller
-* **PZEM-004T** energy meter
-* **Relay module**
+1. **Manually sign every single payment, every cycle.** Works in theory, fails in practice — people forget, get busy, or simply stop. This is a major reason on-chain subscriptions and recurring payroll barely exist today.
+2. **Hand custody of funds to a third party** who pays on your behalf automatically. This defeats the entire point of holding your own wallet — you're back to trusting a middleman with your money.
 
-**Responsibilities:**
-
-* Measure energy consumption every 10 seconds
-* Control electricity ON/OFF
-* Publish data via MQTT
+There is currently no good middle option: a way to pre-authorize a *bounded, revocable, automatic* pull of funds while keeping full self-custody.
 
 ---
 
-### 2. 🌐 Communication Layer (MQTT)
+# ⚡ What XLMPay Does
 
-* Lightweight messaging protocol
-* Enables real-time communication between devices and backend
+XLMPay introduces a third option: a smart-contract-enforced **payment authorization** that sits between the payer and the recipient.
 
-**Flow:**
+1. **The payer signs one authorization**, not a payment every cycle. That authorization defines hard limits:
+   - maximum amount per pull
+   - minimum interval between pulls (e.g., no more than once every 30 days)
+   - an expiry date or maximum number of pulls
+   - which asset (XLM, USDC, or any Stellar asset)
+2. **The authorization is stored in a Soroban contract** — not with XLMPay, not with the recipient. The payer's funds never leave their wallet until a pull actually executes.
+3. **The recipient calls `pull()` each billing cycle.** The contract checks the authorization's limits before releasing any funds. If the recipient tries to pull more than allowed, more often than allowed, or after expiry/revocation, the contract simply rejects it.
+4. **The payer can revoke at any time**, unilaterally, on-chain. No cooperation from the recipient is required, and no further pulls succeed after revocation.
+5. **Funds stay in the payer's wallet the entire time** — this is not a custodial pool, an escrow deposit, or a pre-funded balance. The contract holds a *permission*, not money.
 
+In short: **autopay for self-custodial wallets, where the limits are enforced by code instead of trust.**
+
+---
+
+# 🧑‍🤝‍🧑 Who This Is For
+
+* **On-chain subscription services** — SaaS products, content platforms, or any app that wants "subscribe and forget" instead of manual monthly payments
+* **DAOs** — automated contributor salaries / payroll without a treasury admin manually sending funds every cycle
+* **Rent and installment payments** — landlords, lenders, or BNPL-style products that need predictable recurring transfers
+* **Remittances** — recurring family support payments sent automatically on a schedule
+* **Any recurring B2B or B2C payment** where both sides want automation without a custodian in the middle
+
+---
+
+# 🏗 How It Works (Architecture)
+
+```text
+┌──────────────┐                                   ┌──────────────────┐
+│    Payer      │  1. signs ONE authorization        │    Recipient      │
+│  (wallet/DID) │ ───────────────────────────────►   │ (merchant/employer)│
+└──────┬───────┘                                    └─────────┬─────────┘
+       │                                                       │
+       │                                                       │ 3. calls pull()
+       │ funds remain in                                       │    each cycle
+       │ payer's wallet                                        ▼
+       │                                          ┌─────────────────────────────┐
+       │                                          │   Soroban Smart Contracts     │
+       │                                          │  • Authorization Registry     │
+       │                                          │  • Pull Execution Engine      │
+       │                                          │  • Limit Enforcement          │
+       │                                          │    (amount/frequency/expiry)  │
+       │                                          │  • Revocation Registry        │
+       └─────────────── 4. revoke any time ───────►                               │
+                                                  └─────────────────────────────┘
+                                                                 │
+                                                  2. on each valid pull, contract
+                                                     releases funds directly
+                                                     payer → recipient
+                                                                 ▼
+                                                       Funds settle on Stellar
 ```
-ESP32 → MQTT Broker → Backend Bridge
+
+**The contract never custodies funds.** It custodies a *rule*. On every `pull()` call, the contract checks the rule, and if it passes, the transfer happens directly from payer to recipient in the same operation — there's no intermediate holding account.
+
+---
+
+# ⚡ Core Features
+
+## 🔁 One-Time Authorization, Recurring Payments
+
+Sign once, pay automatically on schedule — no manual re-signing every cycle.
+
+## 🛡 Hard On-Chain Limits
+
+Every authorization is bounded by amount, frequency, and expiry, enforced by the contract — not by trusting the recipient's good behavior.
+
+## 🚫 Instant, Unilateral Revocation
+
+The payer can cancel an authorization at any time, without needing the recipient's cooperation or approval.
+
+## 💰 Fully Non-Custodial
+
+Funds never leave the payer's wallet until a valid pull executes. There is no pooled balance, escrow, or custodian holding funds in between payments.
+
+## 📊 Streaming Mode (Roadmap)
+
+In addition to discrete periodic pulls, a continuous streaming mode is planned for payroll- and rent-style use cases where funds accrue gradually rather than in lump-sum intervals.
+
+## 🔄 Multi-Asset Support
+
+Authorizations can be denominated in XLM or any Stellar-issued asset (e.g., USDC), since Soroban contracts can interact with the Stellar asset layer directly.
+
+## 🔌 Simple Integration API
+
+Recipients (merchants, payroll systems) integrate via a backend API and SDK without needing to write Soroban contract calls themselves.
+
+---
+
+# ⚠️ Threat Model & Limitations
+
+Being upfront about what can go wrong matters more for payment infrastructure than for most software.
+
+| Risk | Mitigation | Status |
+|---|---|---|
+| Recipient attempts to pull more than authorized | Contract enforces hard amount/frequency caps at execution time | Core contract responsibility |
+| Recipient pulls before the allowed interval has passed | Contract checks last-pull timestamp before releasing funds | Core contract responsibility |
+| Payer's balance is insufficient at pull time | Pull simply fails; no partial-pull or debt is created | Documented behavior, no retry logic yet |
+| Authorization continues after payer intends to cancel but forgets/delays | Revocation is instant once submitted, but payer must actively revoke — there's no "pause and resume" yet | Roadmap item |
+| Malicious or buggy recipient contract integration | Authorization Registry only grants pull *rights* defined by the payer; it cannot be widened by the recipient | Needs third-party audit before production use |
+| Smart contract bugs in limit enforcement logic | Test suite covers core paths (see Testing) | **Not yet audited** — do not use with real funds before an independent audit |
+| Recipient identity confusion (wrong recipient pulls funds) | Authorizations are tied to a specific recipient address at creation time | Core contract responsibility |
+
+### Disclaimer
+
+XLMPay is payment **infrastructure**, not a managed payment service. Integrators are responsible for their own security review, key management practices, and any regulatory obligations relevant to their use case (e.g., payroll compliance, consumer protection rules for subscription billing). This project has not undergone a third-party security audit — treat it as early-stage software.
+
+---
+
+# 📁 Monorepo Structure
+
+```text
+xlmpay/
+│
+├── frontend/                  # Payer-facing web app: connect wallet, create/manage authorizations
+│
+├── backend/                   # API services for recipients: trigger pulls, track billing cycles, webhooks
+│
+├── contract/                  # Soroban smart contract: authorization, pull execution, revocation
+│
+├── docs/                      # Architecture, integration guides, contract reference
+│
+├── .github/                   # CI/CD workflows
+│
+├── package.json               # Root workspace configuration
+├── turbo.json                  # Turborepo config (optional)
+├── README.md
+└── LICENSE
 ```
 
 ---
 
-### 3. ⚙️ Backend Bridge (Node.js / Python Hybrid)
+# 🖥 Frontend
 
-Acts as the **translator between blockchain and hardware**:
+The payer-facing interface for creating, viewing, and managing payment authorizations.
 
-* Subscribes to MQTT topics
-* Listens to blockchain events
-* Sends relay commands to ESP32
+### Responsibilities
 
-**Core Responsibilities:**
+* connect Stellar wallet
+* create a new authorization (set amount, frequency, expiry, recipient, asset)
+* view active authorizations and their pull history
+* revoke an authorization
+* view upcoming/expected pulls
 
-* Sync energy usage with user credit
-* Trigger power cutoff when balance = 0
-* Update system state in real-time
+### Stack
 
----
-
-### 4. 🧠 Smart Contract Layer (Soroban)
-
-Built on Stellar using Soroban.
-
-**Responsibilities:**
-
-* Store user balances
-* Deduct credit based on usage
-* Enforce tariff pricing
-* Emit events for backend
-
----
-
-### 5. 📱 Frontend Layer (React App)
-
-User interface for:
-
-* Checking balance
-* Making payments
-* Viewing energy usage
-* Managing account
-
----
-
-## 🔁 End-to-End Flow
-
-1. User sends payment via Stellar
-2. Soroban contract updates balance
-3. Event is emitted
-4. Backend bridge detects event
-5. MQTT message sent to ESP32
-6. Relay turns ON power
-7. Energy consumption tracked in real-time
-8. Balance decreases until zero
-9. Relay turns OFF power automatically
-
----
-
-## 💡 Real-World Validation
-
-* PAYG solar is already proven:
-
-  * M-KOPA serves **700,000+ homes**
-  * Handles **30M+ micropayments/year**
-* Typical user spends:
-
-  * ~$0.50/day on energy
-* Stellar fees:
-
-  * ~$0.00001 → **massive cost reduction**
-
----
-
-## 🧰 Tech Stack
-
-### Frontend
-
-* React.js
+* Next.js
+* React
+* TypeScript
 * Tailwind CSS
-* Stellar Wallet Integration
-
-### Backend
-
-* Node.js (API + bridge logic)
-* MQTT (Mosquitto broker)
-
-### Blockchain
-
-* Stellar Network
-* Soroban Smart Contracts (Rust)
-
-### Hardware
-
-* ESP32
-* PZEM-004T Energy Meter
-* Relay Module
+* Stellar SDK
 
 ---
 
-## 📁 Project Structure
+# ⚙️ Backend
 
+The service layer used by recipients (merchants, payroll systems, landlords) to integrate pull payments into their own product.
+
+### Responsibilities
+
+* track billing cycles and trigger `pull()` calls at the right time
+* expose a simple REST/GraphQL API so recipients don't need to write Soroban calls directly
+* webhook notifications on successful pulls, failed pulls, and revocations
+* authorization status lookups (active, expired, revoked)
+* basic recipient dashboard data (upcoming pulls, payment history)
+
+### Stack
+
+* Node.js
+* Express / NestJS
+* PostgreSQL
+* Stellar SDK
+
+---
+
+# ⛓ Contract
+
+The trust-minimized core of the system. All enforcement of limits happens here, not in the frontend or backend.
+
+### Responsibilities
+
+* store payment authorizations (payer, recipient, asset, amount cap, frequency, expiry)
+* execute `pull()`: validate limits, then transfer funds payer → recipient
+* handle revocation, marking an authorization as permanently inactive
+* emit events for successful pulls, failed pull attempts, and revocations (for backend/frontend to index)
+
+### Stack
+
+* Rust
+* Soroban SDK
+
+---
+
+# 📦 Installation & Setup
+
+## Prerequisites
+
+* Node.js 18+
+* Rust
+* Soroban CLI
+* npm / yarn / pnpm
+
+## Clone Repository
+
+```bash
+git clone https://github.com/xlmpay/xlmpay.git
+cd xlmpay
 ```
-solarfi/
-│
-├── frontend/           # React app
-│
-├── backend/
-│   ├── api/            # Express APIs
-│   ├── bridge/         # MQTT ↔ Stellar listener
-│
-├── contracts/
-│   └── solarfi/        # Soroban smart contract (Rust)
-│
-├── firmware/
-│   └── esp32/          # ESP32 code
-│
-├── docs/               # Architecture & specs
-│
-└── README.md
+
+## Install Dependencies
+
+```bash
+npm install
 ```
 
----
+## Run Frontend
 
-## 🔧 Hardware Setup
-
-### Required Components
-
-* ESP32 (~$5)
-* PZEM-004T (~$6)
-* Relay module
-* Power supply
-
-### Why You Must Start Early
-
-Shipping (AliExpress, etc.) takes **2–3 weeks**, and:
-
-* Firmware cannot be tested without hardware
-* Relay control is core to system validation
-
----
-
-## ⚙️ Smart Contract Design (Soroban)
-
-### Core Functions
-
-* `deposit(user, amount)`
-* `consume(user, units)`
-* `get_balance(user)`
-* `cutoff(user)`
-
-### Key Logic
-
-* Deduct credit per watt-hour consumed
-* Emit event when:
-
-  * Balance updated
-  * Balance hits zero
-
----
-
-## 🔌 MQTT Topics
-
+```bash
+cd frontend
+npm run dev
 ```
-solarfi/device/{deviceId}/usage
-solarfi/device/{deviceId}/relay
-solarfi/device/{deviceId}/status
+
+## Run Backend
+
+```bash
+cd backend
+npm run dev
+```
+
+## Build Smart Contract
+
+```bash
+cd contract
+soroban contract build
 ```
 
 ---
 
-## 🧪 Development Roadmap
+# 🧪 Testing
 
-### Phase 1: Setup
+## Frontend Tests
 
-* [ ] Create monorepo
-* [ ] Setup React frontend
-* [ ] Setup Node.js backend
-* [ ] Deploy MQTT broker
+```bash
+cd frontend
+npm test
+```
 
-### Phase 2: Blockchain
+## Backend Tests
 
-* [ ] Write Soroban contract
-* [ ] Deploy to testnet
-* [ ] Integrate wallet payments
+```bash
+cd backend
+npm test
+```
 
-### Phase 3: Backend Bridge
+## Contract Tests
 
-* [ ] Listen to Stellar events
-* [ ] Connect MQTT broker
-* [ ] Implement relay triggers
+```bash
+cd contract
+cargo test
+```
 
-### Phase 4: Firmware
-
-* [ ] Read PZEM-004T data
-* [ ] Publish MQTT messages
-* [ ] Control relay
-
-### Phase 5: Integration
-
-* [ ] End-to-end testing
-* [ ] Simulate low balance cutoff
-* [ ] Optimize latency
+> Contract test coverage does not constitute a security audit. See [Threat Model & Limitations](#%EF%B8%8F-threat-model--limitations) before using with real funds.
 
 ---
 
-## ⚠️ Key Challenges
+# 🌍 Use Cases
 
-* Real-time synchronization between blockchain & hardware
-* Network reliability in rural environments
-* Secure device authentication
-* Handling offline scenarios
-
----
-
-## 🔐 Security Considerations
-
-* Signed MQTT messages
-* Secure wallet transactions
-* Device ID verification
-* Rate limiting on backend
+* on-chain SaaS subscriptions
+* DAO contributor payroll
+* recurring remittances
+* rent payments
+* installment / BNPL-style loan repayments
+* recurring DAO membership dues
 
 ---
 
-## 🌍 Future Improvements
+# 🔄 Future Roadmap
 
-* Mobile app (React Native)
-* Offline-first payments (USSD fallback)
-* AI usage prediction
-* Multi-device household support
+* continuous streaming payments (payroll/rent-style accrual, not just discrete pulls)
+* pause/resume for authorizations (instead of only revoke-and-recreate)
+* retry logic for failed pulls due to insufficient balance
+* multi-recipient / split-payment authorizations
+* mobile wallet integration
+* developer SDK for faster recipient-side integration
+* third-party smart contract security audit
+
+---
+
+# 🤝 Contributing
+
+We welcome contributions from:
+
+* frontend developers
+* backend engineers
+* Rust / Soroban developers
+* security researchers
+* technical writers
+
+### Contribution Steps
+
+1. Fork repository
+2. Create feature branch
+3. Commit changes
+4. Open Pull Request
 
 
+---
+
+# 📚 Documentation
+
+Planned documentation includes:
+
+* contract reference (function signatures, authorization schema)
+* recipient integration guide
+* frontend wallet-connection guide
+* security model and threat model
+* API reference for backend endpoints
+
+---
+
+# 📜 License
+
+MIT License
